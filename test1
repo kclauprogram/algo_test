@@ -69,17 +69,19 @@ def enter(price_a, price_b, direction, bet=10000):
 
 def close(record, current_value):
 
-    for elememt in mean_list:
-        if record[0] == elememt[0]:
-            close_long_position = record[1] * elememt[1]
-        if record[2] == elememt[0]:
-            close_short_position = record[3] * elememt[1]
+    for element in mean_list:
+        for element2 in current_value:
+            if element2[0] == element[0]:
+                element2[1] = element2[1] * element[1]
+                print(element2)
 
-    for element2 in current_value:
-        if record[0] == elememt[0]:
-            close_long_position = close_long_position * element2[1]
-        if record[0] == elememt[0]:
-            close_short_position = close_short_position * element2[1]
+    for element3 in current_value:
+        if record[0] == element3[0]:
+            close_long_position = record[1] * element3[1]
+            print(close_long_position)
+        if record[2] == element3[0]:
+            close_short_position = record[3] * element3[1]
+            print(close_short_position)
 
     equity = close_long_position - close_short_position
 
@@ -154,11 +156,11 @@ def main():
     train_data, test_data = data_preprocess(train_data, test_data)
 
     ###
-    obs_list = find_pair(train_data)
+    obs_list = find_pair(train_data, criteria=70)
 
     for trade_pair in obs_list:
         trade_pair = trade_pair[1:3]
-        tmp = trade_execute(test_data, trade_pair)
+        tmp = trade_execute(test_data, trade_pair, gap=0.2)
         print(tmp)
 
     #output = review(data=test_data, obs_list=obs_list)

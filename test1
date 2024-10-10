@@ -1,0 +1,97 @@
+import numpy as np
+import pandas as pd
+import fastdtw
+
+def data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data.csv'):
+    data = pd.read_csv(path)
+    return data
+
+def data_preprocess(data):
+    #normalize
+    column_list = data.columns.to_list()
+    mean_list = []
+    for stock in column_list:
+        mean = np.mean(data[stock])
+        mean_list.append([stock, mean])
+        data[stock] = data[stock]/mean
+
+    return data, mean_list
+
+def combination(list):
+    output = []
+    for i in range(len(list)-1):
+        for j in range(len(list)-i-1):
+            output.append([list[i], list[i+j+1]])
+    return output
+
+def find_pair(data, criteria=50):
+    column_list = data.columns.to_list()
+    test_pair = combination(column_list)
+    dist = []
+
+    for pair in test_pair:
+        stock1 = data[pair[0]]
+        stock2 = data[pair[1]]
+        dwt_dist = fastdtw.fastdtw(stock1, stock2)[0]
+
+        if dwt_dist < criteria:
+            dist.append([dwt_dist, pair[0], pair[1]])
+
+    return dist
+
+def trade_execute(data, mean_list, trade_pair, gap=0.1):
+
+    for element in mean_list:
+        if element[0] == trade_pair[1]:
+            stock1 = data[trade_pair[1]]/element[1]
+        if element[0] == trade_pair[2]:
+            stock2 = data[trade_pair[2]]/element[1]
+
+    for i in range(len(stock1)):
+        if abs(stock1[i] - stock2[i]) > gap:
+            return stock1
+
+    return 0
+
+def review(data, obs_list):
+    coll_count = []
+    for pair in obs_list:
+        stock1 = data[pair[1]]
+        stock2 = data[pair[2]]
+        count_tmp = 0
+        for i in range(1, len(stock1)):
+            now = bool(stock1[i] >= stock2[i])
+            before = bool(stock1[i-1] >= stock2[i-1])
+            if now != before:
+                count_tmp += 1
+        coll_count.append([count_tmp, pair[1], pair[2]])
+    return coll_count
+
+############################
+def main():
+    ### pre
+    data = data_import()
+    data = data.drop(columns="date")
+    data, mean_list = data_preprocess(data)
+
+    ###
+    obs_list = find_pair(data)
+
+    data2 = data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data2.csv')
+
+
+    for trade_pair in obs_list:
+        x= trade_execute(data2, mean_list, trade_pair)
+
+
+    #trade_execute(data2, mean_list, obs_list)
+
+    #output = review(data=data, obs_list=obs_list)
+
+    print(x)
+
+
+    return 0
+
+##########################
+main()

@@ -2,20 +2,25 @@ import numpy as np
 import pandas as pd
 import fastdtw
 
+mean_list = []
+
 def data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data.csv'):
     data = pd.read_csv(path)
     return data
 
-def data_preprocess(data):
-    #normalize
-    column_list = data.columns.to_list()
-    mean_list = []
-    for stock in column_list:
-        mean = np.mean(data[stock])
-        mean_list.append([stock, mean])
-        data[stock] = data[stock]/mean
+def data_preprocess(train_data, test_data):
 
-    return data, mean_list
+    train_data = train_data.drop(columns="date")
+    test_data = test_data.drop(columns="date")
+    column_list = train_data.columns.to_list()
+
+    for stock in column_list:
+        mean = np.mean(train_data[stock])
+        mean_list.append([stock, mean])
+        train_data[stock] = train_data[stock]/mean
+        test_data[stock] = test_data[stock]/mean
+
+    return train_data, test_data
 
 def combination(list):
     output = []
@@ -39,19 +44,92 @@ def find_pair(data, criteria=50):
 
     return dist
 
-def trade_execute(data, mean_list, trade_pair, gap=0.1):
+# given 1 pair, trade in test data
+def enter(price_a, price_b, direction, bet=10000):
 
-    for element in mean_list:
-        if element[0] == trade_pair[1]:
-            stock1 = data[trade_pair[1]]/element[1]
-        if element[0] == trade_pair[2]:
-            stock2 = data[trade_pair[2]]/element[1]
+    #reverse to price
+    for elememt in mean_list:
+        if price_a[0] == elememt[0]:
+            price_a[1] = price_a[1] * elememt[1]
+        if price_b[0] == elememt[0]:
+            price_b[1] = price_b[1] * elememt[1]
 
-    for i in range(len(stock1)):
-        if abs(stock1[i] - stock2[i]) > gap:
-            return stock1
+    #trade
+    if direction:
+        long_position = bet/price_b[1]
+        short_position = bet/price_a[1]
 
-    return 0
+        return [price_b[0], long_position, price_a[0], short_position, 0]
+
+    if not(direction):
+        long_position = bet/price_a[1]
+        short_position = bet/price_b[1] 
+
+        return [price_a[0], long_position, price_b[0], short_position, 0]
+
+def close(record, current_value):
+
+    for elememt in mean_list:
+        if record[0] == elememt[0]:
+            close_long_position = record[1] * elememt[1]
+        if record[2] == elememt[0]:
+            close_short_position = record[3] * elememt[1]
+
+    for element2 in current_value:
+        if record[0] == elememt[0]:
+            close_long_position = close_long_position * element2[1]
+        if record[0] == elememt[0]:
+            close_short_position = close_short_position * element2[1]
+
+    equity = close_long_position - close_short_position
+
+    close_record = record
+    close_record[0] = record[2]
+    close_record[1] = record[3]
+    close_record[2] = record[0]
+    close_record[3] = record[1]
+    close_record[4] = equity
+
+    return close_record
+    
+def trade_execute(test_data, trade_pair, gap=0.1):
+
+    stock1 = test_data[trade_pair[0]]
+    stock2 = test_data[trade_pair[1]]
+    bet = 10000
+    position_indicate = False
+    trade_record = pd.DataFrame(columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
+
+    for i in range(1, len(stock1)):
+
+        direction_before = bool(stock1[i-1] >= stock2[i-1])
+        direction = bool(stock1[i] >= stock2[i])
+
+        #not in position, gap large
+        if (abs(stock1[i] - stock2[i]) > gap) & (not position_indicate):
+            position_indicate = True
+            record = enter([trade_pair[0], stock1[i]], [trade_pair[1], stock2[i]], direction, bet)
+            df_record = pd.DataFrame([record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
+            trade_record = pd.concat([trade_record, df_record])
+
+        #in position, price cross
+        if position_indicate & (direction_before != direction):
+            position_indicate = False
+            current_value = [trade_pair[0], stock1[i]], [trade_pair[1], stock2[i]]
+            close_record = close(record, current_value)
+            df_crecord = pd.DataFrame([close_record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
+            trade_record = pd.concat([trade_record, df_crecord])
+
+        #in postion, forcibly liquidate
+        if position_indicate & (i == len(stock1)-1):
+            current_value = [trade_pair[0], stock1[i]], [trade_pair[1], stock2[i]]
+            close_record = close(record, current_value)
+            df_crecord = pd.DataFrame([close_record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
+            trade_record = pd.concat([trade_record, df_crecord])
+
+    trade_record.to_csv("C:/Users/226227/.aworkplace/.vscode/dev/model/result/" + trade_pair[0] + trade_pair[1] + ".csv", index=False)
+
+    return pd.DataFrame(trade_record)
 
 def review(data, obs_list):
     coll_count = []
@@ -70,26 +148,20 @@ def review(data, obs_list):
 ############################
 def main():
     ### pre
-    data = data_import()
-    data = data.drop(columns="date")
-    data, mean_list = data_preprocess(data)
+    train_data = data_import()
+    test_data = data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data2.csv')
+
+    train_data, test_data = data_preprocess(train_data, test_data)
 
     ###
-    obs_list = find_pair(data)
-
-    data2 = data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data2.csv')
-
+    obs_list = find_pair(train_data)
 
     for trade_pair in obs_list:
-        x= trade_execute(data2, mean_list, trade_pair)
+        trade_pair = trade_pair[1:3]
+        tmp = trade_execute(test_data, trade_pair)
+        print(tmp)
 
-
-    #trade_execute(data2, mean_list, obs_list)
-
-    #output = review(data=data, obs_list=obs_list)
-
-    print(x)
-
+    #output = review(data=test_data, obs_list=obs_list)
 
     return 0
 

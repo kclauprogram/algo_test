@@ -83,7 +83,7 @@ def close(record, current_value):
 
     equity = close_long_position - close_short_position
 
-    close_record = record
+    close_record = ["",0,"",0,0]
     close_record[0] = record[2]
     close_record[1] = record[3]
     close_record[2] = record[0]

@@ -4,10 +4,12 @@ import fastdtw
 
 mean_list = []
 
+# import data
 def data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data.csv'):
     data = pd.read_csv(path)
     return data
 
+# normalize the data by divide to its mean, could try different method like (X-mean)/sd
 def data_preprocess(train_data, test_data):
 
     train_data = train_data.drop(columns="date")
@@ -22,6 +24,7 @@ def data_preprocess(train_data, test_data):
 
     return train_data, test_data
 
+# given a list, return all combination of their pairs
 def combination(list):
     output = []
     for i in range(len(list)-1):
@@ -29,6 +32,8 @@ def combination(list):
             output.append([list[i], list[i+j+1]])
     return output
 
+# use dtw to calculate the similarity of these pairs
+# smaller the criteria, the pairs are more similar but less pairs are qualified
 def find_pair(data, criteria=50):
     column_list = data.columns.to_list()
     test_pair = combination(column_list)
@@ -44,7 +49,7 @@ def find_pair(data, criteria=50):
 
     return dist
 
-# given 1 pair, trade in test data
+# change the normalized price in test data as real price, calculate how much unit of long and short for each assets  
 def enter(price_a, price_b, direction, bet=10000):
 
     #reverse to price
@@ -67,6 +72,8 @@ def enter(price_a, price_b, direction, bet=10000):
 
         return [price_a[0], long_position, price_b[0], short_position, 0]
 
+# use the unit calculated in enter and change the normalized price in test data as real price
+# get the realized gain/loss after we close the position
 def close(record, current_value):
 
     for element in mean_list:
@@ -93,7 +100,9 @@ def close(record, current_value):
     close_record[4] = equity
 
     return close_record
-    
+
+# action to perform given market data, enter the market when gap between pairs is observed 
+# large gap mean more gain when converge but less entering opportunity and less likely to converge
 def trade_execute(test_data, trade_pair, gap=0.1):
 
     stock1 = test_data[trade_pair[0]]
@@ -107,14 +116,14 @@ def trade_execute(test_data, trade_pair, gap=0.1):
         direction_before = bool(stock1[i-1] >= stock2[i-1])
         direction = bool(stock1[i] >= stock2[i])
 
-        #not in position, gap large
+        #not in position, gap large, enter the market
         if (abs(stock1[i] - stock2[i]) > gap) & (not position_indicate):
             position_indicate = True
             record = enter([trade_pair[0], stock1[i]], [trade_pair[1], stock2[i]], direction, bet)
             df_record = pd.DataFrame([record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
             trade_record = pd.concat([trade_record, df_record])
 
-        #in position, price cross
+        #in position, price converge, close the pos
         if position_indicate & (direction_before != direction):
             position_indicate = False
             current_value = [trade_pair[0], stock1[i]], [trade_pair[1], stock2[i]]
@@ -133,6 +142,7 @@ def trade_execute(test_data, trade_pair, gap=0.1):
 
     return pd.DataFrame(trade_record)
 
+# not in use
 def review(data, obs_list):
     coll_count = []
     for pair in obs_list:

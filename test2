@@ -40,17 +40,14 @@ def find_pair(data, criteria=50):
 
 # given 1 pair, trade in test data
 def enter(price_a, price_b, direction, bet=10000):
-    #trade
     if direction:
         long_position = bet/price_b[1]
         short_position = bet/price_a[1]
-
         return [price_b[0], long_position, price_a[0], short_position, 0]
-
-    if not(direction):
+    
+    else:
         long_position = bet/price_a[1]
         short_position = bet/price_b[1]
-
         return [price_a[0], long_position, price_b[0], short_position, 0]
 
 def close(record, current_value):
@@ -59,14 +56,7 @@ def close(record, current_value):
     close_short_position = record[3] * current_value[0]
     equity = close_long_position - close_short_position
 
-    close_record = ["",0,"",0,0]
-    close_record[0] = record[2]
-    close_record[1] = record[3]
-    close_record[2] = record[0]
-    close_record[3] = record[1]
-    close_record[4] = equity
-
-    return close_record
+    return [record[2], record[3], record[0], record[1], equity]
     
 def trade_execute(norm_test_data, trade_pair, gap=0.1):
 
@@ -77,7 +67,7 @@ def trade_execute(norm_test_data, trade_pair, gap=0.1):
     stock2_price = test_data[trade_pair[1]]
 
     bet = 10000
-    position_indicate = False
+    in_position = False
     trade_record = pd.DataFrame(columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
 
     for i in range(1, len(stock1)):
@@ -86,22 +76,22 @@ def trade_execute(norm_test_data, trade_pair, gap=0.1):
         direction = bool(stock1[i] >= stock2[i])
 
         #not in position, gap large
-        if (abs(stock1[i] - stock2[i]) > gap) & (not position_indicate):
-            position_indicate = True
+        if (abs(stock1[i] - stock2[i]) > gap) & (not in_position):
+            in_position = True
             record = enter([trade_pair[0], stock1_price[i]], [trade_pair[1], stock2_price[i]], direction, bet)
             df_record = pd.DataFrame([record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
             trade_record = pd.concat([trade_record, df_record])
 
         #in position, price cross
-        if position_indicate & (direction_before != direction):
-            position_indicate = False
+        if in_position & (direction_before != direction):
+            in_position = False
             current_value = [stock1_price[i], stock2_price[i]] if direction_before else [stock2_price[i], stock1_price[i]]
             close_record = close(record, current_value)
             df_crecord = pd.DataFrame([close_record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
             trade_record = pd.concat([trade_record, df_crecord])
 
         #in postion, forcibly liquidate when time end
-        if position_indicate & (i == len(stock1)-1):
+        if in_position & (i == len(stock1)-1):
             current_value = [stock1_price[i], stock2_price[i]] if direction_before else [stock2_price[i], stock1_price[i]]
             close_record = close(record, current_value)
             df_crecord = pd.DataFrame([close_record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])

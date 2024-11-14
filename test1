@@ -104,6 +104,9 @@ def coint_find_pair(data, dwt_pair, reload=False):
     
     return trade_list
 
+def corr_find_pair():
+    return 0
+
 def pair_divergence(data, pair_list):
     pair_div = {}
     for pair in pair_list:
@@ -175,7 +178,7 @@ def trade_execute(norm_test_data, trade_pair, scaler, gap=0.1):
 
     return trade_record 
 
-def review_by_pair(trade_record, pair):
+def review_by_pair(trade_record, pair, output=False):
     
     final = trade_record[-1][4]
     
@@ -183,11 +186,11 @@ def review_by_pair(trade_record, pair):
     df_trade_record['name1'] = pair[0]
     df_trade_record['name2'] = pair[1]    
     
-    if final > 10000:
+    if final > 10000 and output:
         df_trade_record['profitable'] = 1
         df_trade_record.to_csv("D:/data/algo_package/good/" + pair[0] + '&' + pair[1] + "_summary.csv", index=False)
     
-    if final < 10000:
+    if final < 10000 and output:
         df_trade_record['profitable'] = 0
         df_trade_record.to_csv("D:/data/algo_package/bad/" + pair[0] + '&' + pair[1] + "_summary.csv", index=False)
     
@@ -209,11 +212,11 @@ def main():
     train_data, test_data = data_import()
     norm_train_data, norm_test_data, scaler = data_preprocess(train_data, test_data)
 
-    ### first find pair that are similar, then perform cointegration test
+    ### first find pair that are similar
     reload_index = True
-    dwt_list = dwt_find_pair(norm_train_data, criteria=14, reload=reload_index)
-    trade_list = coint_find_pair(norm_train_data, dwt_list)
-    #trade_list = dwt_list
+    dwt_list = dwt_find_pair(norm_train_data, criteria=12, reload=reload_index)
+    #trade_list = coint_find_pair(norm_train_data, dwt_list)
+    trade_list = dwt_list
     
     entering_criteria = pair_divergence(norm_train_data, trade_list)
 
@@ -232,9 +235,11 @@ def main():
         else:
             print('No trade record found for '+ pair_name)
         
-    print('Total profitable trade pair :'+ str((finalresult-len(trade_list)*10000)/len(trade_list)/10000) + '%')
-    df_trade_summary = pd.DataFrame(trade_summary, columns=['long', 'unit_long', 'short', 'unit_short', 'return', 'price_long', 'price_short', 'percent_change'])
-    df_trade_summary.to_csv('D:/data/algo_package/trade_summary.csv')
+    initial = len(trade_list)*10000
+    percentage_profit = (finalresult-initial)/initial*100
+    print(f'Total profitable trade pair : {percentage_profit} %')
+    #df_trade_summary = pd.DataFrame(trade_summary, columns=['long', 'unit_long', 'short', 'unit_short', 'return', 'price_long', 'price_short', 'percent_change'])
+    #df_trade_summary.to_csv('D:/data/algo_package/trade_summary.csv')
 
     return 0
 ##########################

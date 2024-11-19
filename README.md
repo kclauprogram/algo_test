@@ -16,4 +16,10 @@ The idea is to find the stock that are similar to do pair trade, open the positi
 2.3) comparision is done by introducing some time lag, capture the relationship of stocks better (ssd directly compare the price on the same day, but even the stocks are similar, they may not react the same magnitide the same day due to time needed for information to flow, which one of the crucial explanation on why pair trade workings, ssd failed to capture this feature)
 2.4) drawback on dwt: VERY VERY time-consuming ( O(n^2) complexity, especially when we have > 100000 pair)
 
-3)dtw trainig detail   
+3)dtw training detail   
+3.1) not original dtw which is slow, we use fastdtw ( take average on 2 adjacent data point, the size to train reduce to half, but the distance path is not optimal(smallest) )
+3.2) sort the pair arcording to the dtw distance ascendingly 
+
+4) trade execution detail
+4.1) pick the first n pairs based on previous criteria
+4.2) 

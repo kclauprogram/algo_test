@@ -1,5 +1,8 @@
 # algo_test
 
+ref: https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=598dcc162548d1deabc9ef8eaa2de7609b7c7682#page=53
+https://proceedings.neurips.cc/paper/2019/file/02f063c236c7eef66324b432b748d15d-Paper.pdf
+
 The idea is to find the stock that are similar to do pair trade, open the position when the price of stock diverge, close when they converge
 
 0) data are S&P 500 stock close price, trade day of 2019 Nov 1 - 2021 Nov 1 as train data, trade day of 2021 Nov 1 - 2024 Nov 1 as test data(trading peroid)

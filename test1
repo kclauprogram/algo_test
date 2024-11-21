@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 import fastdtw
 import os
-from statsmodels.tsa.stattools import coint
+import matplotlib.pyplot as plt
+
 
 def data_import(path='D:/data/sp500_ibapi/summary.csv'):
     data = pd.read_csv(path)  
@@ -50,15 +51,16 @@ def combination(list):
             output.append([list[i], list[i+j+1]])
     return output
 
-def dwt_find_pair(data, criteria=50, test_mode=False, reload=False):
+def dwt_find_pair(data, criteria=50, reload=False, reload_index=100):
     column_list = data.columns.to_list()
     test_pair = combination(column_list)
+    print('total pair to test :'+ str(len(test_pair)))
     dist = []
     
     if reload:
         print("retreive last pair data")
         pair_record = pd.read_csv("D:/data/algo_package/pair/dwt.csv")
-        pair_record = pair_record[pair_record['dist'] < criteria]                     
+        pair_record = pair_record.head(reload_index)                   
         print(f'retreived {pair_record.shape[0]} dtw pair data')      
         return pair_record.values.tolist()
 
@@ -70,42 +72,54 @@ def dwt_find_pair(data, criteria=50, test_mode=False, reload=False):
         if dwt_dist < criteria:
             print('Found new pair ' + str(pair) + ' with distance : ' + str(dwt_dist))
             dist.append([pair[0], pair[1], dwt_dist])
-            
-        if (len(dist) > 10) & test_mode:
-            pair_record = pd.DataFrame(dist, columns=['pair1', 'pair2', 'dist'])
-            pair_record.to_csv('D:/data/algo_package/pair/' + str(criteria) + ".csv", index=False)
-            return dist
         
     pair_record = pd.DataFrame(dist, columns=['pair1', 'pair2', 'dist'])
+    pair_record = pair_record.sort_values('dist', ascending=True)
     pair_record.to_csv('D:/data/algo_package/pair/dwt' + str(criteria) + ".csv", index=False)
     print('total pair found :'+ str(len(dist)))
     
     return dist
 
-def coint_find_pair(data, dwt_pair, reload=False):
+def ssd_find_pair(data, criteria, reload=False, reload_index=False):
+    column_list = data.columns.to_list()
+    test_pair = combination(column_list)
+    dist = []
     
     if reload:
-        print("retreive last coint pair data")
-        pair_record = pd.read_csv('D:/data/algo_package/pair/coint' + ".csv")
-        print(f'retreived {pair_record.shape[0]} coint pair data')
+        print("retreive last pair data")
+        pair_record = pd.read_csv("D:/data/algo_package/pair/ssd.csv")
+        pair_record = pair_record.head(reload_index)                     
+        print(f'retreived {pair_record.shape[0]} ssd pair data')      
         return pair_record.values.tolist()
-    
-    trade_list = []
-    for pair in dwt_pair:
-        price_1, price_2 = data[pair[0]], data[pair[1]]
-        t_stat, p_value, cri_value = coint(price_1, price_2, trend='c')
-        if p_value < 0.05:
-            print('Trade pair ' + pair[0] + ' & ' + pair[1] +' pass the test with t-stat :'+ str(t_stat) + ', p-value :'+ str(p_value))
-            trade_list.append(pair)
-    
-    pair_record = pd.DataFrame(trade_list, columns=['pair1', 'pair2', 'dist'])
-    pair_record.to_csv('D:/data/algo_package/pair/coint' + ".csv", index=False)
-    print('total pair pass the test :'+ str(len(trade_list)))
-    
-    return trade_list
 
-def corr_find_pair():
-    return 0
+    for pair in test_pair:
+        stock1 = data[pair[0]].dropna()
+        stock2 = data[pair[1]].dropna()
+        
+        if len(stock1) != len(stock2):
+            continue
+        
+        if len(stock1) % 2 != 0:
+            stock2 = stock2[:-1]
+            stock1 = stock1[:-1]
+            
+        stock1 = stock1.values.reshape(-1, 2)
+        stock2 = stock2.values.reshape(-1, 2)
+        
+        stock1 = np.array(np.mean(stock1, axis=1))
+        stock2 = np.array(np.mean(stock2, axis=1))
+        
+        ssd_dist = np.sum((stock1 - stock2)**2)
+        if ssd_dist < criteria:
+            #print('Found new pair ' + str(pair) + ' with distance : ' + str(ssd_dist))
+            dist.append([pair[0], pair[1], ssd_dist])
+        
+    pair_record = pd.DataFrame(dist, columns=['pair1', 'pair2', 'dist'])
+    pair_record = pair_record.sort_values('dist', ascending=True)
+    pair_record.to_csv('D:/data/algo_package/pair/ssd' + str(criteria) + ".csv", index=False)
+    print('total pair found :'+ str(len(dist)))
+    
+    return dist
 
 def pair_divergence(data, pair_list):
     pair_div = {}
@@ -116,96 +130,83 @@ def pair_divergence(data, pair_list):
         pair_div[str(stock_1 + '&' + stock_2)] = diff
     return pair_div
     
-def enter(price_a, price_b, direction, equity=10000):
+def enter(record, a, b, direction, invest_amount):
+    record[7] = True 
     if direction:
-        long_position = equity/price_b[1]
-        short_position = equity/price_a[1]
-        return [price_b[0], long_position, price_a[0], short_position, equity, price_b[1], price_a[1], 0]
+        record[0] = b[0]
+        record[1] = invest_amount/b[1]
+        record[2] = b[1]
+        record[3] = a[0]
+        record[4] = invest_amount/a[1]
+        record[5] = a[1]
+        return record
     
     else:
-        long_position = equity/price_a[1]
-        short_position = equity/price_b[1]
-        return [price_a[0], long_position, price_b[0], short_position, equity, price_a[1], price_b[1], 0]
+        record[0] = a[0]
+        record[1] = invest_amount/a[1]
+        record[2] = a[1]
+        record[3] = b[0]
+        record[4] = invest_amount/b[1]
+        record[5] = b[1]
+        return record
 
-def close(record, current_value):
+def trade_execute(norm_test_data, trade_pair, scaler, gap, initial_capital, invest_amount):
     
-    close_long_position = record[1] * current_value[1]
-    close_short_position = record[3] * current_value[0]
-    equity = record[4] + close_long_position - close_short_position
-
-    return [record[2], record[3], record[0], record[1], equity, current_value[1], current_value[0], (equity/record[4])-1]
-    
-def trade_execute(norm_test_data, trade_pair, scaler, gap=0.1):
-    
-    stock1 = norm_test_data[trade_pair[0]].dropna()
-    stock2 = norm_test_data[trade_pair[1]].dropna()
+    name_a, name_b = trade_pair[0], trade_pair[1]
+    stock1 = norm_test_data[name_a].dropna()
+    stock2 = norm_test_data[name_b].dropna()
     test_data = scaler_transform(norm_test_data, scaler, inverse=True)
-    stock1_price = test_data[trade_pair[0]]
-    stock2_price = test_data[trade_pair[1]]
+    stock1_price = test_data[name_a]
+    stock2_price = test_data[name_b]
 
     trade_period = min(len(stock1), len(stock2))
-    equity = 10000
     in_position = False
+    
     trade_record = []
+    first_record = [name_a, 0, stock1_price[0], name_b, 0, stock2_price[0], 1, in_position, initial_capital]
+    trade_record.append(first_record)
     
     for i in range(1, trade_period):
             
         direction_before = bool(stock1[i-1] >= stock2[i-1])
         direction = bool(stock1[i] >= stock2[i])
+        record_before = trade_record[i-1]
+
+        #update position status when no event
+        if True:
+            record = record_before
+            record[2] = stock1_price[i]
+            record[5] = stock2_price[i]
+            record[6] = i
+            record[8] = initial_capital + record[1]*record[2] - record[4]*record[5]
 
         #not in position, gap large
-        if (abs(stock1[i] - stock2[i]) > gap*2) & (not in_position):
+        if (abs(stock1[i] - stock2[i]) > gap * 2) & (not in_position):
             in_position = True
-            record = enter([trade_pair[0], stock1_price[i]], [trade_pair[1], stock2_price[i]], direction, equity)
-            trade_record.append(record)
+            a, b = [name_a, stock1_price[i]], [name_b, stock2_price[i]]
+            record = enter(record, a, b, direction, invest_amount)
 
         #in position, price cross
         if in_position & (direction_before != direction):
             in_position = False
-            current_value = [stock1_price[i], stock2_price[i]] if direction_before else [stock2_price[i], stock1_price[i]]
-            close_record = close(record, current_value)
-            equity = close_record[4]
-            trade_record.append(close_record)
+            initial_capital = record[8]
+            record[1] = 0
+            record[4] = 0
+            record[7] = in_position
 
         #in postion, forcibly liquidate when time end
         if in_position & (i == trade_period - 1):
-            current_value = [stock1_price[i], stock2_price[i]] if direction_before else [stock2_price[i], stock1_price[i]]
-            close_record = close(record, current_value)
-            equity = close_record[4]
-            trade_record.append(close_record)
+            in_position = False
+            record[1] = 0
+            record[4] = 0
+            record[7] = in_position
             
-    #print("Trade execution for " + trade_pair[0] + ' & ' + trade_pair[1] + " completed.")
+        trade_record.append(record.copy())
+
+    print(trade_record)
+    print("Trade execution for " + trade_pair[0] + ' & ' + trade_pair[1] + " completed.")
 
     return trade_record 
-
-def review_by_pair(trade_record, pair, output=False):
-    
-    final = trade_record[-1][4]
-    
-    df_trade_record = pd.DataFrame(trade_record, columns=['long', 'unit_long','short', 'unit_short', 'equity', 'price_long', 'price_short', 'percent_change'])
-    df_trade_record['name1'] = pair[0]
-    df_trade_record['name2'] = pair[1]    
-    
-    if final > 10000 and output:
-        df_trade_record['profitable'] = 1
-        df_trade_record.to_csv("D:/data/algo_package/good/" + pair[0] + '&' + pair[1] + "_summary.csv", index=False)
-    
-    if final < 10000 and output:
-        df_trade_record['profitable'] = 0
-        df_trade_record.to_csv("D:/data/algo_package/bad/" + pair[0] + '&' + pair[1] + "_summary.csv", index=False)
-    
-    if np.isnan(final):
-        print('No trade record found for '+ pair[0] + '&' + pair[1])
-        return 0
-    
-    return final
-
-def trade_study(trade_record, trade_pair):
-
-    if sum(trade_record['return']) > 0:
-        print(trade_pair)
-        return 1 
-    return 0 
 ############################
 def main():
     ### preprocess
@@ -213,34 +214,31 @@ def main():
     norm_train_data, norm_test_data, scaler = data_preprocess(train_data, test_data)
 
     ### first find pair that are similar
-    reload_index = True
-    dwt_list = dwt_find_pair(norm_train_data, criteria=12, reload=reload_index)
-    #trade_list = coint_find_pair(norm_train_data, dwt_list)
-    trade_list = dwt_list
+    reload = True
+    trade_list = dwt_find_pair(norm_train_data, criteria=70, reload=reload, reload_index=1)
     
     entering_criteria = pair_divergence(norm_train_data, trade_list)
 
     trade_summary = []
     finalresult = 0
+    output_format = ['long', 'unit_long', 'price_long', 'short', 'unit_short', 'price_short', 'time', 'in_positon', 'equity']
     # trade_execute and review by pair
     for trade_pair in trade_list:
         
         pair_name = trade_pair[0] + '&' + trade_pair[1]
-        trade_record = trade_execute(norm_test_data.copy(), trade_pair, scaler, gap=entering_criteria[pair_name])
-    
-        finalresult += review_by_pair(trade_record, trade_pair)
+        trade_record = trade_execute(norm_test_data.copy(), trade_pair, scaler,
+                                     gap=entering_criteria[pair_name], invest_amount=10000, initial_capital=10000)
+        df_trade = pd.DataFrame(trade_record, columns=output_format)
+        df_trade.to_csv('D:/data/algo_package/trade_review/' + pair_name + '.csv')
     
         if len(trade_record) > 0:
             trade_summary.extend(trade_record)
         else:
             print('No trade record found for '+ pair_name)
-        
-    initial = len(trade_list)*10000
-    percentage_profit = (finalresult-initial)/initial*100
-    print(f'Total profitable trade pair : {percentage_profit} %')
-    #df_trade_summary = pd.DataFrame(trade_summary, columns=['long', 'unit_long', 'short', 'unit_short', 'return', 'price_long', 'price_short', 'percent_change'])
-    #df_trade_summary.to_csv('D:/data/algo_package/trade_summary.csv')
+
+    df_trade_summary = pd.DataFrame(trade_summary, columns=output_format)
+    df_trade_summary.to_csv('D:/data/algo_package/trade_summary.csv')
 
     return 0
-##########################
+##########################################
 main()

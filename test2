@@ -1,139 +1,111 @@
-import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-import fastdtw
+import numpy as np
+import os
+import algo_main as al
+import matplotlib.pyplot as plt
 
-scalar = StandardScaler()
+def get_pair(num, method):
+    if method == 'dtw':
+        pair_list = al.dwt_find_pair(data=None, criteria=0, reload=True, reload_index=num) 
+    if method == 'ssd':
+        pair_list = al.ssd_find_pair(data=None, criteria=0, reload=True, reload_index=num)
+    return pair_list
 
-def data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data.csv'):
-    data = pd.read_csv(path)
-    return data
-
-def data_preprocess(train_data, test_data):
-    train_data = train_data.drop(columns='date')
-    test_data = test_data.drop(columns='date')
-    norm_train_data = pd.DataFrame(scalar.fit_transform(train_data), columns=train_data.columns)
-    norm_test_data = pd.DataFrame(scalar.transform(test_data), columns=test_data.columns)
-    return norm_train_data, norm_test_data
-
-def combination(list):
-    output = []
-    for i in range(len(list)-1):
-        for j in range(len(list)-i-1):
-            output.append([list[i], list[i+j+1]])
-    return output
-
-def find_pair(data, criteria=50):
-    column_list = data.columns.to_list()
-    test_pair = combination(column_list)
-    dist = []
-
-    for pair in test_pair:
-        stock1 = data[pair[0]]
-        stock2 = data[pair[1]]
-        dwt_dist = fastdtw.fastdtw(stock1, stock2)[0]
-
-        if dwt_dist < criteria:
-            dist.append([dwt_dist, pair[0], pair[1]])
-
-    return dist
-
-# given 1 pair, trade in test data
-def enter(price_a, price_b, direction, bet=10000):
-    if direction:
-        long_position = bet/price_b[1]
-        short_position = bet/price_a[1]
-        return [price_b[0], long_position, price_a[0], short_position, 0]
+def get_summary_data(num, method):
+    summary = []
+    summary_columns = ['name', 'max_drawdown', 'total_return', 'std', 'idle']
+    pair_list = get_pair(num, method)
+    for pair in pair_list:
+        
+        file_name = pair[0] + '&' + pair[1]
+        if method == 'dtw':
+            file_path = 'D:/data/algo_package/trade_review_dtw/' + file_name + '.csv'
+        if method == 'ssd': 
+            file_path = 'D:/data/algo_package/trade_review_ssd/' + file_name + '.csv'
+        data = pd.read_csv(file_path)
+        
+        value = data['value']
+        position_inc = data['in_positon']
+        
+        maxdown = min(value)
+        total_return = (value[len(value)-1] - value[0]) / value[0]
+        idle_time = position_inc[~position_inc].shape[0]
+        value_std = np.std(value)
+        #sharpe_ratio = total_return / value_std
+        
+        summary.append([file_name, maxdown, total_return, value_std, idle_time])
     
-    else:
-        long_position = bet/price_a[1]
-        short_position = bet/price_b[1]
-        return [price_a[0], long_position, price_b[0], short_position, 0]
+    summary = pd.DataFrame(summary, columns=summary_columns)
+    summary.to_csv('D:/data/algo_package/all_trade_review_' + method + '.csv', index=False)
+        
+    return summary
 
-def close(record, current_value):
+def get_full_review(num, method):
+    pair_list = get_pair(num, method)
+    value = np.zeros(750)
+    for pair in pair_list:
+        file_name = pair[0] + '&' + pair[1]
+        if method == 'dtw':
+            file_path = 'D:/data/algo_package/trade_review_dtw/' + file_name + '.csv'
+        if method == 'ssd': 
+            file_path = 'D:/data/algo_package/trade_review_ssd/' + file_name + '.csv'
+        data = pd.read_csv(file_path)
+        value += data['value']
 
-    close_long_position = record[1] * current_value[1]
-    close_short_position = record[3] * current_value[0]
-    equity = close_long_position - close_short_position
-
-    return [record[2], record[3], record[0], record[1], equity]
+    maxdown = min(value)/value[0]
+    std = np.std(value)
+    percentage_change = (value[len(value)-1] - value[0]) / value[0]
     
-def trade_execute(norm_test_data, trade_pair, gap=0.1):
+    feature = [maxdown, percentage_change, std]
 
-    stock1 = norm_test_data[trade_pair[0]]
-    stock2 = norm_test_data[trade_pair[1]]
-    test_data = pd.DataFrame(scalar.inverse_transform(norm_test_data), columns=norm_test_data.columns)
-    stock1_price = test_data[trade_pair[0]]
-    stock2_price = test_data[trade_pair[1]]
+    val = pd.DataFrame(value, columns=['value'])
+    #val.to_csv('D:/data/algo_package/total_value.csv')
+        
+    return feature, val
 
-    bet = 10000
-    in_position = False
-    trade_record = pd.DataFrame(columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
+def plotting():
+    df1 = pd.read_csv("D:/data/algo_package/meta_dtw.csv")
+    df2 = pd.read_csv("D:/data/algo_package/meta_ssd.csv")
+    
+    columns = df1.columns
+    plt.figure(figsize=(8, 6))
 
-    for i in range(1, len(stock1)):
-
-        direction_before = bool(stock1[i-1] >= stock2[i-1])
-        direction = bool(stock1[i] >= stock2[i])
-
-        #not in position, gap large
-        if (abs(stock1[i] - stock2[i]) > gap) & (not in_position):
-            in_position = True
-            record = enter([trade_pair[0], stock1_price[i]], [trade_pair[1], stock2_price[i]], direction, bet)
-            df_record = pd.DataFrame([record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
-            trade_record = pd.concat([trade_record, df_record])
-
-        #in position, price cross
-        if in_position & (direction_before != direction):
-            in_position = False
-            current_value = [stock1_price[i], stock2_price[i]] if direction_before else [stock2_price[i], stock1_price[i]]
-            close_record = close(record, current_value)
-            df_crecord = pd.DataFrame([close_record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
-            trade_record = pd.concat([trade_record, df_crecord])
-
-        #in postion, forcibly liquidate when time end
-        if in_position & (i == len(stock1)-1):
-            current_value = [stock1_price[i], stock2_price[i]] if direction_before else [stock2_price[i], stock1_price[i]]
-            close_record = close(record, current_value)
-            df_crecord = pd.DataFrame([close_record], columns=['long', 'unit_long', 'short', 'unit_short', 'return'])
-            trade_record = pd.concat([trade_record, df_crecord])
-
-    trade_record.to_csv("C:/Users/226227/.aworkplace/.vscode/dev/model/result/" + trade_pair[0] + trade_pair[1] + ".csv", index=False)
-
-    return pd.DataFrame(trade_record)
-
-def review(data, obs_list):
-    coll_count = []
-    for pair in obs_list:
-        stock1 = data[pair[1]]
-        stock2 = data[pair[2]]
-        count_tmp = 0
-        for i in range(1, len(stock1)):
-            now = bool(stock1[i] >= stock2[i])
-            before = bool(stock1[i-1] >= stock2[i-1])
-            if now != before:
-                count_tmp += 1
-        coll_count.append([count_tmp, pair[1], pair[2]])
-    return coll_count
-
-############################
-def main():
-    ### pre
-    train_data = data_import()
-    test_data = data_import(path='C:/Users/226227/.aworkplace/.vscode/dev/model/data2.csv')
-
-    train_data, test_data = data_preprocess(train_data, test_data)
-
-    ###
-    obs_list = find_pair(train_data, criteria=150)
-
-    for trade_pair in obs_list:
-        trade_pair = trade_pair[1:3]
-        tmp = trade_execute(test_data, trade_pair, gap=0.2)
-        print(tmp)
-
-    #output = review(data=test_data, obs_list=obs_list)
+    for column in columns:
+        plt.plot(df1[column], marker='o', label='dtw', linestyle='-')
+        plt.plot(df2[column], marker='x', label='ssd', linestyle='--')
+        plt.title(f'Comparison of {column}')
+        plt.xlabel('number of top rank pairs')
+        plt.ylabel(column)
+        plt.legend()
+        plt.grid(True)
+        
+        plt.savefig('D:/data/algo_package/comparison_' + column + '.png')
+        plt.close()
 
     return 0
 
-##########################
+############################################################
+def main():
+
+    dtw_meta_summaries = []
+    ssd_meta_summaries = []
+    for num in range(1, 101):
+        for method in ['dtw', 'ssd']:
+           feature, val = get_full_review(num, method)
+           if method == 'dtw':
+                dtw_meta_summaries.append(feature)
+                print(f'DTW {num}th summary')
+           else:
+                ssd_meta_summaries.append(feature)
+                print(f'SSD {num}th summary')
+        
+    dtw_meta_summaries = pd.DataFrame(dtw_meta_summaries, columns=['max_drawdown', 'percentage_increase','std'])
+    ssd_meta_summaries = pd.DataFrame(ssd_meta_summaries, columns=['max_drawdown', 'percentage_increase','std'])
+    dtw_meta_summaries.to_csv("D:/data/algo_package/meta_dtw.csv", index=False)
+    ssd_meta_summaries.to_csv("D:/data/algo_package/meta_ssd.csv", index=False)
+    
+    plotting()
+    
+    return 0
+############################################################
 main()
